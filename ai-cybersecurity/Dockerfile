@@ -1,7 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-# Copy from HOST's ai-governance dir to CONTAINER's /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
-CMD ["python", "governance.py"]
+CMD ["python", "cybersecurity.py"]

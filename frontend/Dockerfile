@@ -6,5 +6,7 @@ COPY frontend .
 RUN npm run build
 
 FROM nginx:alpine
+# Remove default config and copy our full config
+RUN rm /etc/nginx/conf.d/default.conf
+COPY infra/nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder /app/build /usr/share/nginx/html
-COPY infra/nginx.conf /etc/nginx/conf.d/default.conf

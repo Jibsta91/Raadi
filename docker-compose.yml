@@ -2,14 +2,20 @@ version: '3.8'
 
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: .  # Project root context
+      dockerfile: ./frontend/Dockerfile
     ports:
       - "80:80"
     depends_on:
       - backend
+    networks:
+      - raadi-net
 
   backend:
-    build: ./backend
+    build:
+      context: .  # Root directory
+      dockerfile: ./backend/Dockerfile
     ports:
       - "8000:8000"
     env_file: .env
@@ -18,28 +24,63 @@ services:
       - redis
       - ai-governance
       - ai-cybersecurity
+    networks:
+      - raadi-net
 
   ai-governance:
     build: ./ai-governance
     ports:
       - "8001:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - raadi-net
 
   ai-cybersecurity:
     build: ./ai-cybersecurity
     ports:
       - "8002:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - raadi-net
 
   postgres:
     image: postgres:15
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - raadi-net
 
   redis:
     image: redis:alpine
     volumes:
       - redisdata:/data
+    networks:
+      - raadi-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus:/etc/prometheus  # Mount directory instead of single file
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    networks:
+      - raadi-net
 
 volumes:
   pgdata:
   redisdata:
+
+networks:
+  raadi-net:
+    driver: bridge
