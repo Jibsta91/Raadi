@@ -1,0 +1,36 @@
+name: Raadi Deployment
+
+on: [push]
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:latest
+            ghcr.io/${{ github.repository }}/backend:latest
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+      
+      - name: Scan vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/backend:latest
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
