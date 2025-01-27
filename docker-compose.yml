@@ -1,36 +1,102 @@
-version: '3.8'
-
 services:
-  frontend:
-    build:
-      context: .  # Project root context
-      dockerfile: ./frontend/Dockerfile
+  traefik:
+    image: traefik:v2.10
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
     ports:
       - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - raadi-net
+      - ai-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=Host(`raadi.com`)
+      - traefik.http.routers.frontend.entrypoints=web
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - raadi-net
 
   backend:
     build:
-      context: .  # Root directory
+      context: .
       dockerfile: ./backend/Dockerfile
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      - postgres
-      - redis
-      - ai-governance
-      - ai-cybersecurity
+    environment:
+      - AI_OVERRIDES_ENABLED=true
+      - AI_ML_ENDPOINT=http://ai-orchestrator:8500
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.backend.rule=Host(`api.raadi.com`)
+      - traefik.http.services.backend.loadbalancer.server.port=8000
+    networks:
+      - raadi-net
+      - ai-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ai-orchestrator:
+    image: tensorflow/serving:2.11.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ai-models:/models
+    command: --model_config_file=/models/config.config
     networks:
       - raadi-net
 
   ai-governance:
-    build: ./ai-governance
-    ports:
-      - "8001:8000"
+    build: ./ai/governance
+    environment:
+      AI_MODEL_PATH: /models/grovernes-v3.h5
+      DB_URL: postgresql://${DB_USER}:${DB_PASS}@postgres:5432/ai_governance
+    volumes:
+      - ai-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - raadi-net
+
+  ai-cybersecurity:
+    build:
+      context: ./ai/cybersecurity
+      dockerfile: Dockerfile
+    environment:
+      THREAT_DB_URL: redis://redis:6379/0
+      ML_SERVICE: http://ai-network:5672
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -39,15 +105,27 @@ services:
     networks:
       - raadi-net
 
-  ai-cybersecurity:
-    build: ./ai-cybersecurity
+  ai-network:
+    image: rabbitmq:management
     ports:
-      - "8002:8000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - raadi-net
+
+  ai-vector-db:
+    image: milvusdb/milvus:v2.2.11
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    networks:
+      - raadi-net
+
+  ai-training:
+    image: tensorflow/tensorflow:2.12.0
+    command: python -m ai_training.scheduler
+    volumes:
+      - training_data:/data
     networks:
       - raadi-net
 
@@ -56,6 +134,11 @@ services:
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - raadi-net
 
@@ -63,6 +146,11 @@ services:
     image: redis:alpine
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - raadi-net
 
@@ -80,7 +168,11 @@ services:
 volumes:
   pgdata:
   redisdata:
+  ai-models:
+  training_data:
 
 networks:
   raadi-net:
+    driver: bridge
+  ai-net:
     driver: bridge

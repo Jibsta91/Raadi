@@ -1,2 +1,5 @@
+# ai/governance/requirements.txt
+torch>=2.0.1
 fastapi>=0.95.2
-uvicorn>=0.21.1
+psycopg2-binary>=2.9.6
+pgvector>=0.2.0

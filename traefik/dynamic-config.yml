@@ -1,0 +1,13 @@
+http:
+  routers:
+    ai-governance:
+      rule: Host(`ai.raadi.com`) && PathPrefix(`/governance`)
+      service: ai-governance
+      middlewares:
+        - ai-auth
+
+  services:
+    ai-governance:
+      loadBalancer:
+        servers:
+          - url: "http://ai-governance:8000"

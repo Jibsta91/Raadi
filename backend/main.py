@@ -1,25 +1,15 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from prometheus_client import make_asgi_app, Counter
+# backend/ai_client.py
+import httpx
 
-app = FastAPI()
-
-class Listing(BaseModel):
-    title: str
-    description: str
-
-@app.post("/listings")
-async def create_listing(listing: Listing):
-    # AI Data Management will process this
-    # Increment the counter for POST requests to /listings
-    REQUESTS.inc()
-    
-    # Process the listing data
-    processed_data = {
-        "status": "received",
-        "listing_id": hash(listing.title + listing.description),  # Simple unique ID
-        "timestamp": datetime.datetime.now().isoformat(),
-        "data": listing.dict()
-    }
-    
-    return processed_data
+class AIGovernanceClient:
+    def __init__(self):
+        self.base_url = "http://ai-governance:8000"
+        
+    async def validate_listing(self, listing_data):
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/validate",
+                json=listing_data,
+                headers={"X-AI-Model": "grovernes-v3"}
+            )
+            return response.json()
